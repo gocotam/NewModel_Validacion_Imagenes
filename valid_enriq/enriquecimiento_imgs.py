@@ -10,7 +10,6 @@ from funciones_auxiliares import (autoML_enriquecimiento,
                                   handle_error,
                                   load_valid_attributes)
 
-
 # Inicialización de la API
 app = FastAPI()
 
@@ -52,24 +51,35 @@ def enriquecimiento(request:ImageRequest):
     atributos_request = request.Atributos
 
     for atributo in atributos_request:
+        atributo_dict = {}
         if atributo in atributos_json.values():
-            atributo_dict = {}
             atributo_dict["Atributo"] = atributo
             predicciones = []
-            for num, subdict in d_normalizados.items():
-                dict_predicciones = {}
-                for valor, confianzas in subdict.items():
-                    if valor == atributos_request[atributo] and atributos_json[num] == atributo:
+            for num, valor_confianzas in d_normalizados.items():
+                if atributo == atributos_json[num]:
+                    for valor in valor_confianzas:
+                        dict_predicciones = {}
                         dict_predicciones["Valor"] = valor
-                        dict_predicciones["Confianza"] = sum(confianzas)
-                        dict_predicciones["Match"] = True#valor == atributos_request[atributo] 
+                        dict_predicciones["Confianza"] = sum(valor_confianzas[valor])
+                        dict_predicciones["Match"] = valor == atributos_request[atributo]
                         predicciones.append(dict_predicciones)
-                    else:
-                        dict_predicciones["Valor"] = valor
-                        dict_predicciones["Confianza"] = sum(confianzas)
-                        dict_predicciones["Match"] = False
-                        predicciones.append(dict_predicciones)
-            atributo_dict["Predicciones"] = predicciones
+            list_confianzas = []
+            for d in predicciones:
+                list_confianzas.append(d["Confianza"])
+            if len(list_confianzas) > 0:
+                max_confianza = max(list_confianzas)
+                for d in predicciones:
+                    if d["Confianza"] == max_confianza:
+                        if d["Match"]:
+                            atributo_dict["Status"] = True
+                        else:
+                            atributo_dict["Status"] = False
+                atributo_dict["Predicciones"] = predicciones
+                atributos.append(atributo_dict)
+        else:
+            atributo_dict["Atributo"] = atributo
+            atributo_dict["Status"] = False
+            atributo_dict["Predicciones"] = []
             atributos.append(atributo_dict)
     
     return {"Atributos": atributos}
