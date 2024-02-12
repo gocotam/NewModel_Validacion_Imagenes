@@ -67,7 +67,8 @@ def successful_response(results):
                 }
             }
         },
-        "Imagenes": results["Imagenes"]
+        "Imagenes": results["Imagenes"],
+        "Atributos": results["Atributos"]
     }
 
 def handle_error(error):
