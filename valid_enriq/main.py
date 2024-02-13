@@ -13,7 +13,9 @@ from funciones_auxiliares import (autoML_enriquecimiento,
                                   successful_response,
                                   handle_error,
                                   load_valid_attributes,
-                                  autoML_validacion)
+                                  autoML_validacion,
+                                  medidas_format,
+                                  compare_images_with_measurements)
 # Inicialización de la API
 app = FastAPI()
 
@@ -51,12 +53,17 @@ def validacion(request:ImageRequest):
                 validaciones_response = {}
                 for name in response['displayNames']:
                     validaciones_response[name] = True 
-                validaciones_response["atemporal"] = True
-                validaciones_response["sin referencias"] = True
-                validaciones_response["sin cruce de marcas"] = True
-                validaciones_response["legible"] = True
-                validaciones_response["medidas"] = True
-                validaciones_response["medidas de la imagen"] = True
+                # validaciones_response["atemporal"] = True <- PENDIENTE
+                # validaciones_response["sin referencias"] = True <- PENDIENTE
+                # validaciones_response["sin cruce de marcas"] = True <- PENDIENTE
+                list_urls = []
+                for img in request.Imagenes:
+                    if img.Tipo == "Isometrico":
+                        list_urls.append(img.URL)
+                if len(list_urls) > 0:
+                    medidas_match = compare_images_with_measurements(medidas_format(request.Medidas),list_urls)
+                    if num < len(medidas_match):
+                        validaciones_response["medidas"] = medidas_match[num]
 
                 response_object = {}
                 response_object["ID"] = ID

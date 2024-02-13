@@ -1,3 +1,4 @@
+# Librerías
 import urllib.request
 import http.client
 import typing
@@ -9,8 +10,11 @@ from fastapi.responses import JSONResponse
 import logging
 import json
 from functools import lru_cache
+import re
+from google.cloud import vision
+import math
 
-
+# Funciones
 def get_image_bytes_from_url(image_url: str) -> bytes:
     with urllib.request.urlopen(image_url) as response:
         response = typing.cast(http.client.HTTPResponse, response)
@@ -162,3 +166,76 @@ def load_valid_attributes(filename: str) -> dict:
     with open(filename, 'r') as file:
         data = json.load(file)
     return data
+
+def medidas_format(d: dict) -> list:
+    medidas_request_format = []
+    for _, medidas in d.items():
+        valores = [medida["valor"] for medida in medidas]
+        unidades = [medidas[0]["unidad"]]
+        medidas_request_format.append({"medida": valores, "unidad": unidades})
+    return medidas_request_format
+
+def get_numbers_and_units_from_text(text):
+    """
+    --> REGEX para buscar números con unidades en el texto, incluyendo decimales <--
+    """
+    pattern = r'(\b\d+\.\d+\b|\b\d+\b)\s*(cm|mm|in|CM|MM|IN)\b' #centimetros 
+    matches = re.findall(pattern, text)
+    return matches
+
+def get_text_from_image(image_url):
+    """
+    --> Procesamiento de imagen y detección de texto dentro de la misma <--
+    """
+    client = vision.ImageAnnotatorClient()
+
+    image = vision.Image()
+    image.source.image_uri = image_url
+
+    response = client.text_detection(image=image)
+    texts = response.text_annotations
+
+    if texts:
+        detected_text = texts[0].description 
+        numbers_and_units = get_numbers_and_units_from_text(detected_text)
+        
+        return detected_text, numbers_and_units, texts[1:]
+
+    return None, None, None
+
+def compare_measurements_with_image(measurement, num, unit):
+    measure = measurement.get("medida", [])
+    units_allowed = [u.lower() for u in measurement.get("unidad", [])]
+
+    if unit in units_allowed:
+        for m in measure:
+            if math.isclose(float(num), m):
+                return True
+    return False
+
+def compare_images_with_measurements(measurements_list, image_urls):
+    if len(measurements_list) != len(image_urls):
+        raise ValueError("El número de imágenes no coincide con el número de diccionarios.")
+
+    success_list = []  
+
+    for idx, image_url in enumerate(image_urls):
+        try:
+            detected_text, numbers_and_units, _ = get_text_from_image(image_url)
+            if detected_text and numbers_and_units:
+                success = False  
+                for item in numbers_and_units:
+                    num, unit = item[0], item[1]
+                    unit_in_image = unit.lower()
+                    for measurement in measurements_list:
+                        if compare_measurements_with_image(measurement, num, unit_in_image):
+                            success = True  
+                            break
+                    if success:
+                        break  
+                success_list.append(success)  
+            else:
+                success_list.append(False)  
+        except Exception as e:
+            success_list.append(False)  
+    return success_list  
