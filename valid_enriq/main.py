@@ -45,7 +45,7 @@ def validacion(request:ImageRequest):
         futures = [executor.submit(generate_one_image, img) for img in request.Imagenes]
     
         imagenes = []
-        for num, img in enumerate(concurrent.futures.as_completed(futures)):
+        for num, img in enumerate(futures):
             try:
                 start = time.time()
                 ID, response = img.result()
