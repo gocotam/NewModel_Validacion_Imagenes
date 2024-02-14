@@ -206,36 +206,43 @@ def get_text_from_image(image_url):
 def compare_measurements_with_image(measurement, num, unit):
     measure = measurement.get("medida", [])
     units_allowed = [u.lower() for u in measurement.get("unidad", [])]
+    
+    unit = unit.lower()
 
-    if unit in units_allowed:
-        for m in measure:
-            if math.isclose(float(num), m):
-                return True
+    if float(num) in measure and unit in units_allowed:
+        return True
+    
     return False
 
 def compare_images_with_measurements(measurements_list, image_urls):
     if len(measurements_list) != len(image_urls):
         raise ValueError("El número de imágenes no coincide con el número de diccionarios.")
+    
+    success_list = []
 
-    success_list = []  
-
-    for idx, image_url in enumerate(image_urls):
+    for _, image_url in enumerate(image_urls):
         try:
             detected_text, numbers_and_units, _ = get_text_from_image(image_url)
             if detected_text and numbers_and_units:
-                success = False  
-                for item in numbers_and_units:
-                    num, unit = item[0], item[1]
-                    unit_in_image = unit.lower()
-                    for measurement in measurements_list:
-                        if compare_measurements_with_image(measurement, num, unit_in_image):
-                            success = True  
+                success = True
+                for measurement in measurements_list:
+                    measure = measurement.get("medida", [])
+                    for num in measure:
+                        num_str = str(num)
+                        unit_in_image = None
+                        for item in numbers_and_units:
+                            if num_str == item[0]:
+                                unit_in_image = item[1]
+                                break
+                        if unit_in_image is None or not compare_measurements_with_image(measurement, num_str, unit_in_image):
+                            success = False
                             break
                     if success:
-                        break  
-                success_list.append(success)  
+                        success_list.append(success)
+                    else:
+                        success_list.append(success)
             else:
-                success_list.append(False)  
+                success_list.append("No se detectó texto o números en la imagen")
         except Exception as e:
-            success_list.append(False)  
-    return success_list  
+            success_list.append(f"Error: {str(e)}") 
+    return success_list

@@ -6,7 +6,6 @@ import traceback
 import time
 import concurrent.futures
 from funcion_endpoints import endpoint_validacion, endpoint_enriquecimiento
-
 from funciones_auxiliares import (autoML_enriquecimiento,
                                   combine_dicts,
                                   normalize_dict,
@@ -16,6 +15,8 @@ from funciones_auxiliares import (autoML_enriquecimiento,
                                   autoML_validacion,
                                   medidas_format,
                                   compare_images_with_measurements)
+logging.basicConfig(level=logging.INFO)
+
 # Inicialización de la API
 app = FastAPI()
 
@@ -26,8 +27,13 @@ atributos_json = load_valid_attributes("atributos_validos.json")
 def generate_one_image(img):
     project, endpoint_id, location = endpoint_validacion()
     predicciones = autoML_validacion(project, endpoint_id, img.URL, location)
-    response = dict(predicciones[0])
-    return img.ID, response
+    if img.Tipo == "Isometrico":
+        response_iso = dict(predicciones[0])
+        response = None
+    else:
+        response = dict(predicciones[0])
+        response_iso = None
+    return img.ID, img.URL, response, response_iso
 
 def enriquecimiento_one_image(img):
     project, endpoint_id, location = endpoint_enriquecimiento()
@@ -41,6 +47,10 @@ def enriquecimiento_one_image(img):
 
 # Función para la validación de imágenes
 def validacion(request:ImageRequest):
+
+    medidas_request = request.Medidas
+    medidas_request_format = medidas_format(medidas_request)
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(request.Imagenes)) as executor:
         futures = [executor.submit(generate_one_image, img) for img in request.Imagenes]
     
@@ -48,23 +58,15 @@ def validacion(request:ImageRequest):
         for num, img in enumerate(futures):
             try:
                 start = time.time()
-                ID, response = img.result()
+                ID, URL, response, response_iso = img.result()
                 logging.info(f"Generando imagen {ID}...")
                 validaciones_response = {}
-                for name in response['displayNames']:
-                    validaciones_response[name] = True 
-                # validaciones_response["atemporal"] = True <- PENDIENTE
-                # validaciones_response["sin referencias"] = True <- PENDIENTE
-                # validaciones_response["sin cruce de marcas"] = True <- PENDIENTE
-                list_urls = []
-                for img in request.Imagenes:
-                    if img.Tipo == "Isometrico":
-                        list_urls.append(img.URL)
-                if len(list_urls) > 0:
-                    medidas_match = compare_images_with_measurements(medidas_format(request.Medidas),list_urls)
-                    if num < len(medidas_match):
-                        validaciones_response["medidas"] = medidas_match[num]
-
+                for response_data in [response, response_iso]:
+                    if response_data is not None:
+                        for name in response_data['displayNames']:
+                            validaciones_response[name] = True
+                        if response_data == response_iso:
+                            validaciones_response["medidas"] = compare_images_with_measurements([medidas_request_format[num]], [URL])[0]
                 response_object = {}
                 response_object["ID"] = ID
                 response_object_status = {}
@@ -78,7 +80,7 @@ def validacion(request:ImageRequest):
                 end = time.time()
                 logging.info(f"Imagen_{num+1}: {end - start}\n")
             except Exception as e:
-                print(f"Error: {e}")
+                logging.error(f"Error: {e}")
     return imagenes
 
 # Función para el enriquecimiento de imágenes
@@ -105,7 +107,7 @@ def enriquecimiento(request:ImageRequest):
                                 d[num] = (name, confidence)
                 list_dict.append(dict(d.values()))
             except Exception as e:
-                print(f"Error: {e}")
+                logging.error(f"Error: {e}")
 
         d_agrupados = combine_dicts(*list_dict)
         d_normalizados = normalize_dict(d_agrupados)
