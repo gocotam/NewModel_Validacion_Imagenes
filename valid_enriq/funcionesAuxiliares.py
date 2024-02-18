@@ -16,8 +16,15 @@ import requests
 from PIL import Image
 from io import BytesIO
 import functools
+import unicodedata
 
 # Funciones
+
+def stripAccents(s):
+   quitandoAcentos =  ''.join(c for c in unicodedata.normalize('NFD', s)
+                  if unicodedata.category(c) != 'Mn')
+   return quitandoAcentos.lower()
+
 def getImageBytesFromUrl(imageUrl: str) -> bytes:
     with urllib.request.urlopen(imageUrl) as response:
         response = typing.cast(http.client.HTTPResponse, response)
@@ -209,7 +216,13 @@ def compareMeasurementsWithImage(measurement, num, unit):
     return False
 
 def compareImagesWithMeasurements(measurementsList, imageUrls):
-    if len(measurementsList) != len(imageUrls):
+    medidasRequestFormat = []
+    for _, medidas in measurementsList.items():
+        valores = [medida["valor"] for medida in medidas]
+        unidades = [medidas[0]["unidad"]]
+        medidasRequestFormat.append({"medida": valores, "unidad": unidades})
+
+    if len(medidasRequestFormat) != len(imageUrls):
         raise ValueError("El número de imágenes no coincide con el número de diccionarios.")
     
     successList = []
@@ -219,7 +232,7 @@ def compareImagesWithMeasurements(measurementsList, imageUrls):
             detectedText, numbersAndUnits, _ = getTextFromImage(imageUrl)
             if detectedText and numbersAndUnits:
                 success = True
-                for measurement in measurementsList:
+                for measurement in medidasRequestFormat:
                     measure = measurement.get("medida", [])
                     for num in measure:
                         numStr = str(num)

@@ -10,9 +10,9 @@ from funcionesAuxiliares import (successfulResponseValidacion,
                                   handleError,
                                   loadValidAttributes,
                                   autoMLValidacion,
-                                  medidasFormat,
                                   compareImagesWithMeasurements,
-                                  detectLogosUri)
+                                  detectLogosUri,
+                                  stripAccents)
 # Configuración de los logs
 logging.basicConfig(level=logging.INFO)
 
@@ -26,27 +26,29 @@ atributosJson = loadValidAttributes("atributosValidos.json")
 def generateOneImage(img):
     project, endpointId, location = endpointValidacion()
     predicciones = autoMLValidacion(project, endpointId, img.URL, location)
-    if img.Tipo == "Isometrico":
+    tipo = stripAccents(img.Tipo)
+    if tipo in ["isometrico"]:
         responseIso = dict(predicciones[0])
         response = None
-    else:
+    elif tipo in ["detalle", "principal"]:
         response = dict(predicciones[0])
         responseIso = None
+    else:
+        raise HTTPException(status_code=400, detail="Tipo de imagen no válido")
     return img.ID, img.URL, response, responseIso
 
 # Función para la validación de imágenes
 def validacion(request:ImageRequest):
 
     medidasRequest = request.Medidas
-    medidasRequestFormat = medidasFormat(medidasRequest)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(request.Imagenes)) as executor:
         futures = [executor.submit(generateOneImage, img) for img in request.Imagenes]
     
         imagenes = []
-        for num, img in enumerate(futures):
+        i = 1
+        for img in concurrent.futures.as_completed(futures):
             try:
-                start = time.time()
                 ID, URL, response, responseIso = img.result()
                 logging.info(f"Generando imagen {ID}...")
                 validacionesResponse = {}
@@ -55,7 +57,8 @@ def validacion(request:ImageRequest):
                         for name in responseData['displayNames']:
                             validacionesResponse[name] = True
                         if responseData == responseIso:
-                            validacionesResponse["medidas"] = compareImagesWithMeasurements([medidasRequestFormat[num]], [URL])[0]
+                            validacionesResponse["medidas"] = compareImagesWithMeasurements({f"Producto{i}":medidasRequest[f"Producto{i}"]}, [URL])[0]
+                            i += 1
                 validacionesResponse["Más de un logo"] = detectLogosUri(URL, "forbiddenPhrases.txt", "months.txt")
                 responseObject = {}
                 responseObject["ID"] = ID
@@ -68,7 +71,6 @@ def validacion(request:ImageRequest):
                 responseObjectStatus["Validaciones"] = validacionesResponse
                 imagenes.append(responseObject)
                 end = time.time()
-                logging.info(f"Imagen_{num+1}: {end - start}\n")
             except Exception as e:
                 logging.error(f"Error: {e}")
     return imagenes

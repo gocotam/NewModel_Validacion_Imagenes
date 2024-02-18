@@ -102,7 +102,7 @@ def enriquecimiento(request:ImageRequest):
 def generateImages(request:ImageRequest):
     return {"Atributos":enriquecimiento(request)}
 
-@app.post("/imgs")
+@app.post("/enriq")
 async def enriquecimientoEndpoint(request: ImageRequest=Body(...)):
     try:
         results = generateImages(request)
