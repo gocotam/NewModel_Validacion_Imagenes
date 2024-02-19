@@ -10,7 +10,8 @@ from funcionesAuxiliares import (autoMLEnriquecimiento,
                                   normalizeDict,
                                   successfulResponseEnriquecimiento,
                                   handleError,
-                                  loadValidAttributes)
+                                  loadValidAttributes,
+                                  stripAccents)
 # Configuración de los logs
 logging.basicConfig(level=logging.INFO)
 
@@ -36,8 +37,13 @@ def enriquecimiento(request:ImageRequest):
     global atributosJson
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(request.Imagenes)) as executor:
-        futures = [executor.submit(enriquecimientoOneImage, img) for img in request.Imagenes]
-        
+        futures = []
+        for img in request.Imagenes:
+            if stripAccents(img.Tipo) in ["isometrico", "detalle", "principal"]:
+                futures.append(executor.submit(enriquecimientoOneImage, img))
+            else:
+                raise HTTPException(status_code=400, detail="Tipo de imagen no válido")
+
         atributos = []
         listDict = []
         for img in concurrent.futures.as_completed(futures):

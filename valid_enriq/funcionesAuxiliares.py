@@ -168,14 +168,6 @@ def loadValidAttributes(filename: str) -> dict:
         data = json.load(file)
     return data
 
-def medidasFormat(d: dict) -> list:
-    medidasRequestFormat = []
-    for _, medidas in d.items():
-        valores = [medida["valor"] for medida in medidas]
-        unidades = [medidas[0]["unidad"]]
-        medidasRequestFormat.append({"medida": valores, "unidad": unidades})
-    return medidasRequestFormat
-
 def getNumbersAndUnitsFromText(text):
     """
     --> REGEX para buscar números con unidades en el texto, incluyendo decimales <--

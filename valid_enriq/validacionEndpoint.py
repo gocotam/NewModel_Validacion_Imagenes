@@ -3,7 +3,6 @@ from fastapi import FastAPI, Body, HTTPException
 from classes import ImageRequest
 import logging
 import traceback
-import time
 import concurrent.futures
 from funcionEndpoints import endpointValidacion
 from funcionesAuxiliares import (successfulResponseValidacion,
@@ -26,16 +25,18 @@ atributosJson = loadValidAttributes("atributosValidos.json")
 def generateOneImage(img):
     project, endpointId, location = endpointValidacion()
     predicciones = autoMLValidacion(project, endpointId, img.URL, location)
-    tipo = stripAccents(img.Tipo)
-    if tipo in ["isometrico"]:
-        responseIso = dict(predicciones[0])
-        response = None
-    elif tipo in ["detalle", "principal"]:
-        response = dict(predicciones[0])
-        responseIso = None
-    else:
-        raise HTTPException(status_code=400, detail="Tipo de imagen no válido")
-    return img.ID, img.URL, response, responseIso
+    response = dict(predicciones[0])
+    validacionesResponse = {}
+    validacionesResponse["Más de un logo"] = detectLogosUri(img.URL, "forbiddenPhrases.txt", "months.txt")
+    for name in response["displayNames"]:
+        validacionesResponse[name] = True
+    d_aux = {
+        "ID": img.ID,
+        "URL": img.URL,
+        "Tipo": stripAccents(img.Tipo),
+        "validacionesResponse": validacionesResponse
+    }
+    return d_aux
 
 # Función para la validación de imágenes
 def validacion(request:ImageRequest):
@@ -49,28 +50,33 @@ def validacion(request:ImageRequest):
         i = 1
         for img in concurrent.futures.as_completed(futures):
             try:
-                ID, URL, response, responseIso = img.result()
-                logging.info(f"Generando imagen {ID}...")
-                validacionesResponse = {}
-                for responseData in [response, responseIso]:
-                    if responseData is not None:
-                        for name in responseData['displayNames']:
-                            validacionesResponse[name] = True
-                        if responseData == responseIso:
-                            validacionesResponse["medidas"] = compareImagesWithMeasurements({f"Producto{i}":medidasRequest[f"Producto{i}"]}, [URL])[0]
-                            i += 1
-                validacionesResponse["Más de un logo"] = detectLogosUri(URL, "forbiddenPhrases.txt", "months.txt")
+                d_aux = img.result()
                 responseObject = {}
-                responseObject["ID"] = ID
                 responseObjectStatus = {}
-                if all(value == True for value in validacionesResponse.values()):
-                    responseObjectStatus["Codigo"] = "Exito"
+                ID, URL, tipo, validacionesResponse = d_aux.get("ID"), d_aux.get("URL"), d_aux.get("Tipo"), d_aux.get("validacionesResponse")
+                logging.info(f"Generando imagen {ID}...")
+                if tipo in ["isometrico"]:
+                    validacionesResponse["medidas"] = compareImagesWithMeasurements({f"Producto{i}":medidasRequest[f"Producto{i}"]}, [URL])[0]
+                    i += 1
+                    responseObject["ID"] = ID
+                    if all(value == True for value in validacionesResponse.values()):
+                        responseObjectStatus["Codigo"] = "Exito"
+                    else:
+                        responseObjectStatus["Codigo"] = "Error"
+                    responseObject["Status"] = responseObjectStatus
+                    responseObjectStatus["Validaciones"] = validacionesResponse
+                    imagenes.append(responseObject)
+                elif tipo in ["detalle", "principal"]:
+                    responseObject["ID"] = ID
+                    if all(value == True for value in validacionesResponse.values()):
+                        responseObjectStatus["Codigo"] = "Exito"
+                    else:
+                        responseObjectStatus["Codigo"] = "Error"
+                    responseObject["Status"] = responseObjectStatus
+                    responseObjectStatus["Validaciones"] = validacionesResponse
+                    imagenes.append(responseObject)
                 else:
-                    responseObjectStatus["Codigo"] = "Error"
-                responseObject["Status"] = responseObjectStatus
-                responseObjectStatus["Validaciones"] = validacionesResponse
-                imagenes.append(responseObject)
-                end = time.time()
+                    raise HTTPException(status_code=400, detail="Tipo de imagen no válido")
             except Exception as e:
                 logging.error(f"Error: {e}")
     return imagenes
