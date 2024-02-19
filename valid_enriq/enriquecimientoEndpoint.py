@@ -1,6 +1,6 @@
 # Librerías
 from fastapi import FastAPI, Body, HTTPException
-from classes import ImageRequest
+from classes import ImageRequestEnriq
 import logging
 import traceback
 import concurrent.futures
@@ -33,7 +33,7 @@ def enriquecimientoOneImage(img):
     return response
 
 # Función para el enriquecimiento de imágenes
-def enriquecimiento(request:ImageRequest):
+def enriquecimiento(request:ImageRequestEnriq):
     global atributosJson
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(request.Imagenes)) as executor:
@@ -105,11 +105,11 @@ def enriquecimiento(request:ImageRequest):
                 atributos.append(atributoDict)
     return atributos
 
-def generateImages(request:ImageRequest):
+def generateImages(request:ImageRequestEnriq):
     return {"Atributos":enriquecimiento(request)}
 
 @app.post("/enriq")
-async def enriquecimientoEndpoint(request: ImageRequest=Body(...)):
+async def enriquecimientoEndpoint(request: ImageRequestEnriq=Body(...)):
     try:
         results = generateImages(request)
         response = successfulResponseEnriquecimiento(results)

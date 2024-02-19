@@ -19,7 +19,6 @@ import functools
 import unicodedata
 
 # Funciones
-
 def stripAccents(s):
    quitandoAcentos =  ''.join(c for c in unicodedata.normalize('NFD', s)
                   if unicodedata.category(c) != 'Mn')
@@ -48,7 +47,7 @@ def autoMLValidacion(
     ).to_value()
     instances = [instance]
     parameters = predict.params.ImageClassificationPredictionParams(
-        confidence_threshold=0.7,
+        confidence_threshold=0.3,
         max_predictions=5,
     ).to_value()
     endpoint = client.endpoint_path(
@@ -168,6 +167,14 @@ def loadValidAttributes(filename: str) -> dict:
         data = json.load(file)
     return data
 
+def medidasFormat(d: dict) -> list:
+    medidasRequestFormat = []
+    for _, medidas in d.items():
+        valores = [medida["valor"] for medida in medidas]
+        unidades = [medidas[0]["unidad"]]
+        medidasRequestFormat.append({"medida": valores, "unidad": unidades})
+    return medidasRequestFormat
+
 def getNumbersAndUnitsFromText(text):
     """
     --> REGEX para buscar números con unidades en el texto, incluyendo decimales <--
@@ -211,8 +218,11 @@ def compareImagesWithMeasurements(measurementsList, imageUrls):
     medidasRequestFormat = []
     for _, medidas in measurementsList.items():
         valores = [medida["valor"] for medida in medidas]
-        unidades = [medidas[0]["unidad"]]
-        medidasRequestFormat.append({"medida": valores, "unidad": unidades})
+        unidades = [medida["unidad"] for medida in medidas]
+        if len(set(unidades)) == 1:
+            medidasRequestFormat.append({"medida": valores, "unidad": list(set(unidades))})
+        else:
+            medidasRequestFormat.append({"medida": valores, "unidad": ["Unidades diferentes"]})
 
     if len(medidasRequestFormat) != len(imageUrls):
         raise ValueError("El número de imágenes no coincide con el número de diccionarios.")
@@ -252,12 +262,13 @@ def readTextFile(file_path):
         data = file.readlines()
     return [line.strip() for line in data]
 
+
 def detectLogosUri(uri, forbiddenPhrasesFile, monthsFile):
     """Detects logos in the file located in Google Cloud Storage or on the Web."""
     client = vision.ImageAnnotatorClient()
     
     forbiddenPhrases = readTextFile(forbiddenPhrasesFile)
-    forbiddenWebsites = ["www.liverpool.com.mx"] 
+    allowedWebsites = "www.liverpool.com.mx"
     months = readTextFile(monthsFile)
 
     response = requests.get(uri)
@@ -268,21 +279,24 @@ def detectLogosUri(uri, forbiddenPhrasesFile, monthsFile):
     response = client.text_detection(image=image)
     texts = response.text_annotations[1:]
 
+    forbiddenPhraseDetected = False
+    websiteDetected = False
+    monthDetected = False
+
     for text in texts:
         detectedText = text.description
 
         for phrase in forbiddenPhrases:
             if phrase.lower() in detectedText.lower():
-                return False
+                forbiddenPhraseDetected = True
 
-        for website in forbiddenWebsites:
-            if website.lower() in detectedText.lower():
-                return False
-            
+        if allowedWebsites not in detectedText.lower():
+            websiteDetected = True
+
         datePattern = r"\d{1,2}\s*(?:[./-]\s*\d{1,2}){0,2}"
         monthPattern = r"\b(?:%s)\b" % "|".join(months)
         if re.search(datePattern, detectedText, re.IGNORECASE) or re.search(monthPattern, detectedText, re.IGNORECASE):
-            return False
+            monthDetected = True
 
     image = vision.Image()
     image.source.image_uri = uri
@@ -290,18 +304,6 @@ def detectLogosUri(uri, forbiddenPhrasesFile, monthsFile):
     response = client.logo_detection(image=image)
     logos = response.logo_annotations
     
-    success = False 
-    detectedLogos = []
+    success = len(logos) > 1
 
-    for logo in logos:
-        logoText = logo.description.lower()
-        if any(phrase.lower() in logoText for phrase in forbiddenPhrases):
-            return False
-
-        success = True
-        detectedLogos.append(logoText)
-        
-    if len(detectedLogos) != 1:
-        success = False
-        
-    return success
+    return (forbiddenPhraseDetected, websiteDetected, monthDetected, success)

@@ -12,8 +12,12 @@ class Imagen(BaseModel):
     URL : Optional[str] = ""
 
 #BYTES: Optional[bytes] = b""
-class ImageRequest(BaseModel):
+class ImageRequestValid(BaseModel):
     Plantilla: str
     Medidas: dict
+    Imagenes: list[Imagen]
+
+class ImageRequestEnriq(BaseModel):
+    Plantilla: str
     Atributos: dict
     Imagenes: list[Imagen]

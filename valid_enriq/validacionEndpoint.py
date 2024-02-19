@@ -1,6 +1,6 @@
 # Librerías
 from fastapi import FastAPI, Body, HTTPException
-from classes import ImageRequest
+from classes import ImageRequestValid
 import logging
 import traceback
 import concurrent.futures
@@ -26,8 +26,13 @@ def generateOneImage(img):
     project, endpointId, location = endpointValidacion()
     predicciones = autoMLValidacion(project, endpointId, img.URL, location)
     response = dict(predicciones[0])
-    validacionesResponse = {}
-    validacionesResponse["Más de un logo"] = detectLogosUri(img.URL, "forbiddenPhrases.txt", "months.txt")
+    forbiddenPhraseDetected, websiteDetected, monthDetected, logoDetected = detectLogosUri(img.URL, "forbiddenPhrases.txt", "months.txt")
+
+    validacionesResponse = {"Frase prohibida": forbiddenPhraseDetected, 
+                            "Página web": websiteDetected, 
+                            "Ref a meses": monthDetected, 
+                            "Más de un logo": logoDetected}
+
     for name in response["displayNames"]:
         validacionesResponse[name] = True
     d_aux = {
@@ -39,7 +44,7 @@ def generateOneImage(img):
     return d_aux
 
 # Función para la validación de imágenes
-def validacion(request:ImageRequest):
+def validacion(request:ImageRequestValid):
 
     medidasRequest = request.Medidas
 
@@ -48,7 +53,7 @@ def validacion(request:ImageRequest):
     
         imagenes = []
         i = 1
-        for img in concurrent.futures.as_completed(futures):
+        for img in futures:#concurrent.futures.as_completed(futures):
             try:
                 d_aux = img.result()
                 responseObject = {}
@@ -81,11 +86,11 @@ def validacion(request:ImageRequest):
                 logging.error(f"Error: {e}")
     return imagenes
 
-def generateImages(request:ImageRequest):
+def generateImages(request:ImageRequestValid):
     return {"Imagenes":validacion(request)}
 
 @app.post("/imgs")
-async def enriquecimientoEndpoint(request: ImageRequest=Body(...)):
+async def enriquecimientoEndpoint(request: ImageRequestValid=Body(...)):
     try:
         results = generateImages(request)
         response = successfulResponseValidacion(results)
