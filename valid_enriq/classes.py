@@ -11,7 +11,6 @@ class Imagen(BaseModel):
     URI: Optional[str] = ""
     URL : Optional[str] = ""
 
-#BYTES: Optional[bytes] = b""
 class ImageRequestValid(BaseModel):
     Plantilla: str
     Medidas: dict

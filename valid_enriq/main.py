@@ -1,17 +1,12 @@
 # Librerías
 from fastapi import FastAPI, Body, HTTPException
-from classes import ImageRequestEnriq
+from classes import ImageRequestValid, ImageRequestEnriq
 import logging
 import traceback
 import concurrent.futures
-from funcionEndpoints import endpointEnriquecimiento
-from funcionesAuxiliares import (autoMLEnriquecimiento,
-                                  combineDicts,
-                                  normalizeDict,
-                                  successfulResponseEnriquecimiento,
-                                  handleError,
-                                  loadValidAttributes,
-                                  stripAccents)
+from funcionEndpoints import endpointValidacion, endpointEnriquecimiento
+from funcionesAuxiliares import *
+
 # Configuración de los logs
 logging.basicConfig(level=logging.INFO)
 
@@ -22,6 +17,33 @@ app = FastAPI()
 atributosJson = loadValidAttributes("atributosValidos.json")
 
 # Funciones auxiliares para aplicar la concurrencia
+def generateOneImage(img):
+    project, endpointId, location = endpointValidacion()
+    predicciones = autoMLValidacion(project, endpointId, img.URL, location)
+    response = dict(predicciones[0])
+    forbiddenPhraseDetected, websiteDetected, monthDetected, logoDetected = detectLogosUri(img.URL, "forbiddenPhrases.txt", "months.txt")
+
+    validacionesResponse = {"Frase prohibida": forbiddenPhraseDetected, 
+                            "Página web": websiteDetected, 
+                            "Ref a meses": monthDetected, 
+                            "Más de un logo": logoDetected}
+    
+    labels = ["pixelado", "corte de extremidades", "mesa", "mal enfocado", "modelo", "producto roto", "aire", "ojos cerrados",
+              "etiqueta visible", "reflejo", "mala iluminacion"]
+
+    for name in response["displayNames"]:
+        validacionesResponse[stringCamelCase(name)] = True
+    for label in labels:
+        if stringCamelCase(label) not in validacionesResponse.keys():
+            validacionesResponse[stringCamelCase(label)] = False
+            
+    d_aux = {
+        "ID": img.ID,
+        "URL": img.URL,
+        "Tipo": stripAccents(img.Tipo),
+        "validacionesResponse": validacionesResponse
+    }
+    return d_aux
 def enriquecimientoOneImage(img):
     project, endpointId, location = endpointEnriquecimiento()
     prediccionesEnriq = autoMLEnriquecimiento(
@@ -31,6 +53,51 @@ def enriquecimientoOneImage(img):
             location=location)
     response = dict(prediccionesEnriq[0])
     return response
+
+# Función para la validación de imágenes
+def validacion(request:ImageRequestValid):
+
+    medidasRequest = request.Medidas
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(request.Imagenes)) as executor:
+        futures = [executor.submit(generateOneImage, img) for img in request.Imagenes]
+    
+        imagenes = []
+        i = 1
+        for img in futures:
+            try:
+                d_aux = img.result()
+                responseObject = {}
+                responseObjectStatus = {}
+                ID, URL, tipo, validacionesResponse = d_aux.get("ID"), d_aux.get("URL"), d_aux.get("Tipo"), d_aux.get("validacionesResponse")
+                logging.info(f"Generando imagen {ID}...")
+                if tipo in ["isometrico"]:
+                    validacionesResponse["medidas"] = compareImagesWithMeasurements({f"Producto{i}":medidasRequest[f"Producto{i}"]}, [URL])[0]
+                    i += 1
+                    responseObject["ID"] = ID
+                    if all(value == True for value in validacionesResponse.values()):
+                        responseObjectStatus["Codigo"] = "Exito"
+                    else:
+                        responseObjectStatus["Codigo"] = "Error"
+                    responseObject["Status"] = responseObjectStatus
+                    responseObjectStatus["Validaciones"] = validacionesResponse
+                    imagenes.append(responseObject)
+                elif tipo in ["detalle", "principal"]:
+                    responseObject["ID"] = ID
+                    if all(value == True for value in validacionesResponse.values()):
+                        responseObjectStatus["Codigo"] = "Exito"
+                    else:
+                        responseObjectStatus["Codigo"] = "Error"
+                    responseObject["Status"] = responseObjectStatus
+                    responseObjectStatus["Validaciones"] = validacionesResponse
+                    imagenes.append(responseObject)
+                else:
+                    raise HTTPException(status_code=400, detail="Tipo de imagen no válido")
+            except Exception as e:
+                logging.error(f"Error: {e}")
+    return imagenes
+def generateImagesValid(request:ImageRequestValid):
+    return {"Imagenes":validacion(request)}
 
 # Función para el enriquecimiento de imágenes
 def enriquecimiento(request:ImageRequestEnriq):
@@ -104,14 +171,29 @@ def enriquecimiento(request:ImageRequestEnriq):
                 atributoDict["Predicciones"] = []
                 atributos.append(atributoDict)
     return atributos
-
-def generateImages(request:ImageRequestEnriq):
+def generateImagesEnriq(request:ImageRequestEnriq):
     return {"Atributos":enriquecimiento(request)}
 
+# Endpoint para la validación de imágenes
+@app.post("/imgs")
+async def validacionEndpoint(request: ImageRequestValid=Body(...)):
+    try:
+        results = generateImagesValid(request)
+        response = successfulResponseValidacion(results)
+        return response
+    except HTTPException as he:
+        return handleError(he)
+
+    except Exception as e:
+        logging.error(f"Error: {e}")
+        traceback.print_exc()
+        return handleError(e)
+
+# Endpoint para el enriquecimiento de imágenes
 @app.post("/enriq")
 async def enriquecimientoEndpoint(request: ImageRequestEnriq=Body(...)):
     try:
-        results = generateImages(request)
+        results = generateImagesEnriq(request)
         response = successfulResponseEnriquecimiento(results)
         return response
     except HTTPException as he:
@@ -125,3 +207,5 @@ async def enriquecimientoEndpoint(request: ImageRequestEnriq=Body(...)):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+

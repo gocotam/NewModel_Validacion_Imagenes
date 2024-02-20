@@ -24,6 +24,10 @@ def stripAccents(s):
                   if unicodedata.category(c) != 'Mn')
    return quitandoAcentos.lower()
 
+def stringCamelCase(s):
+    camel_case = ''.join(x for x in s.title() if x.isalnum())
+    return camel_case[0].lower() + camel_case[1:]
+
 def getImageBytesFromUrl(imageUrl: str) -> bytes:
     with urllib.request.urlopen(imageUrl) as response:
         response = typing.cast(http.client.HTTPResponse, response)
@@ -47,8 +51,8 @@ def autoMLValidacion(
     ).to_value()
     instances = [instance]
     parameters = predict.params.ImageClassificationPredictionParams(
-        confidence_threshold=0.3,
-        max_predictions=5,
+        confidence_threshold=0.8,
+        max_predictions=10,
     ).to_value()
     endpoint = client.endpoint_path(
         project=project, location=location, endpoint=endpointId
@@ -126,8 +130,8 @@ def autoMLEnriquecimiento(
     ).to_value()
     instances = [instance]
     parameters = predict.params.ImageClassificationPredictionParams(
-        confidence_threshold=0.1,
-        max_predictions=5,
+        confidence_threshold=0.5,
+        max_predictions=10,
     ).to_value()
     endpoint = client.endpoint_path(
         project=project, location=location, endpoint=endpointId
@@ -161,7 +165,7 @@ def normalizeDict(dCombined):
                 normalizedDict[num][key] = normalizedValues
     return normalizedDict
 
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=3)
 def loadValidAttributes(filename: str) -> dict:
     with open(filename, 'r') as file:
         data = json.load(file)
@@ -256,12 +260,11 @@ def compareImagesWithMeasurements(measurementsList, imageUrls):
             successList.append(f"Error: {str(e)}") 
     return successList
 
-@functools.lru_cache(maxsize=1)
+@functools.lru_cache(maxsize=3)
 def readTextFile(file_path):
     with open(file_path, 'r') as file:
         data = file.readlines()
     return [line.strip() for line in data]
-
 
 def detectLogosUri(uri, forbiddenPhrasesFile, monthsFile):
     """Detects logos in the file located in Google Cloud Storage or on the Web."""
