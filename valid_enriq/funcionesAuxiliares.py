@@ -82,7 +82,7 @@ def successfulResponseEnriquecimiento(results):
         "Status": {
             "General": "Success",
             "Details": {
-                "Images": {
+                "Atributos": {
                     "Code": "00",
                     "Message": "Generado exitosamente."
                 }
