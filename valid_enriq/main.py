@@ -23,16 +23,17 @@ def generateOneImage(img):
     response = dict(predicciones[0])
     forbiddenPhraseDetected, websiteDetected, monthDetected, logoDetected = detectLogosUri(img.URL, "forbiddenPhrases.txt", "months.txt")
 
-    validacionesResponse = {"Frase prohibida": forbiddenPhraseDetected, 
-                            "Página web": websiteDetected, 
-                            "Ref a meses": monthDetected, 
-                            "Más de un logo": logoDetected}
+    validacionesResponse = {"fraseProhibida": forbiddenPhraseDetected, 
+                            "paginaWeb": websiteDetected, 
+                            "refAMeses": monthDetected, 
+                            "masDeUnLogo": logoDetected}
     
     labels = ["pixelado", "corte de extremidades", "mesa", "mal enfocado", "modelo", "producto roto", "aire", "ojos cerrados",
               "etiqueta visible", "reflejo", "mala iluminacion"]
 
     for name in response["displayNames"]:
         validacionesResponse[stringCamelCase(name)] = True
+    
     for label in labels:
         if stringCamelCase(label) not in validacionesResponse.keys():
             validacionesResponse[stringCamelCase(label)] = False
@@ -80,6 +81,7 @@ def validacion(request:ImageRequestValid):
                     else:
                         responseObjectStatus["Codigo"] = "Error"
                     responseObject["Status"] = responseObjectStatus
+                    responseObject["DescripcionErrores"] = prettyErrors(validacionesResponse)
                     responseObjectStatus["Validaciones"] = validacionesResponse
                     imagenes.append(responseObject)
                 elif tipo in ["detalle", "principal"]:
@@ -89,6 +91,7 @@ def validacion(request:ImageRequestValid):
                     else:
                         responseObjectStatus["Codigo"] = "Error"
                     responseObject["Status"] = responseObjectStatus
+                    responseObject["DescripcionErrores"] = prettyErrors(validacionesResponse)
                     responseObjectStatus["Validaciones"] = validacionesResponse
                     imagenes.append(responseObject)
                 else:

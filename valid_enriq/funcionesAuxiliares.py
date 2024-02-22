@@ -19,6 +19,21 @@ import functools
 import unicodedata
 
 # Funciones
+def prettyErrors(d:dict) -> str:
+    s = "Errores detectados:"
+    if all(valor == False for valor in d.values()):
+        s += " Ningún error detectado."
+    else:
+      aux = set([clave for clave, valor in d.items() if valor])
+      if aux == {"modelo", "mesa"} or aux == {"modelo"} or aux == {"mesa"}:
+        s += " Ningún error detectado."
+      else:
+        for v in [clave for clave, valor in d.items() if valor]:
+            if v in ["modelo", "mesa"]:
+                continue
+            s += f"\n{v}"
+    return s
+
 def stripAccents(s):
    quitandoAcentos =  ''.join(c for c in unicodedata.normalize('NFD', s)
                   if unicodedata.category(c) != 'Mn')
@@ -52,7 +67,7 @@ def autoMLValidacion(
     instances = [instance]
     parameters = predict.params.ImageClassificationPredictionParams(
         confidence_threshold=0.8,
-        max_predictions=10,
+        max_predictions=50,
     ).to_value()
     endpoint = client.endpoint_path(
         project=project, location=location, endpoint=endpointId
@@ -131,7 +146,7 @@ def autoMLEnriquecimiento(
     instances = [instance]
     parameters = predict.params.ImageClassificationPredictionParams(
         confidence_threshold=0.5,
-        max_predictions=10,
+        max_predictions=50,
     ).to_value()
     endpoint = client.endpoint_path(
         project=project, location=location, endpoint=endpointId
