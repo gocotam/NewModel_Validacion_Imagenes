@@ -77,30 +77,22 @@ def validacion(request:ImageRequestValid):
                 responseObjectStatus = {}
                 ID, info, tipo, validacionesResponse = d_aux.get("ID"), d_aux.get("Info"), d_aux.get("Tipo"), d_aux.get("validacionesResponse")
                 logging.info(f"Generando imagen {ID}...")
-                if tipo in ["isometrico"]:
-                    validacionesResponse["medidas"] = compareImagesWithMeasurements({f"Producto{i}":medidasRequest[f"Producto{i}"]}, [info])[0]
-                    i += 1
+                #####
+                if tipo in ["isometrico", "detalle", "principal"]:
                     responseObject["ID"] = ID
                     if all(value == True for value in validacionesResponse.values()):
-                        responseObjectStatus["Codigo"] = "Exito"
+                        responseObjectStatus["Código"] = "Éxito"
                     else:
-                        responseObjectStatus["Codigo"] = "Error"
+                        responseObjectStatus["Código"] = "Error"
                     responseObject["Status"] = responseObjectStatus
-                    responseObject["DescripcionErrores"] = prettyErrors(validacionesResponse)
-                    responseObjectStatus["Validaciones"] = validacionesResponse
-                    imagenes.append(responseObject)
-                elif tipo in ["detalle", "principal"]:
-                    responseObject["ID"] = ID
-                    if all(value == True for value in validacionesResponse.values()):
-                        responseObjectStatus["Codigo"] = "Exito"
-                    else:
-                        responseObjectStatus["Codigo"] = "Error"
-                    responseObject["Status"] = responseObjectStatus
+                    if tipo == "isometrico":
+                        validacionesResponse["medidas"] = compareImagesWithMeasurements({f"Producto{i}":medidasRequest[f"Producto{i}"]}, [info])[0]
+                        i += 1
                     responseObject["DescripcionErrores"] = prettyErrors(validacionesResponse)
                     responseObjectStatus["Validaciones"] = validacionesResponse
                     imagenes.append(responseObject)
                 else:
-                    raise HTTPException(status_code=400, detail="Tipo de imagen no válido")
+                    raise HTTPException(status_code=400, detail="Tipo de imagen no válido.")
             except Exception as e:
                 logging.error(f"Error: {e}")
     return imagenes
