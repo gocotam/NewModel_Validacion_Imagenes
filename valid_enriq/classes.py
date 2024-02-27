@@ -10,13 +10,16 @@ class Imagen(BaseModel):
     ID: str
     URI: Optional[str] = ""
     URL : Optional[str] = ""
+    Base64: Optional[str] = ""
 
 class ImageRequestValid(BaseModel):
     Plantilla: str
+    Prediccion: bool
     Medidas: dict
     Imagenes: list[Imagen]
 
 class ImageRequestEnriq(BaseModel):
     Plantilla: str
+    Prediccion: bool
     Atributos: dict
     Imagenes: list[Imagen]

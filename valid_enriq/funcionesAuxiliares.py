@@ -11,14 +11,38 @@ import logging
 import json
 from functools import lru_cache
 import re
-from google.cloud import vision
-import requests
-from PIL import Image
-from io import BytesIO
+from google.cloud import vision, storage
 import functools
 import unicodedata
 
 # Funciones
+def base64ToBytes(base64_str):
+    # Decodificar la representación base64 a una cadena de bytes
+    imagen_bytes = base64.b64decode(base64_str)
+    return imagen_bytes
+
+def obtenerBytesDesdeGcs(uri):
+    bucket_name = uri.split("/")[2]
+    blob_name = uri.split("/")[3]
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(blob_name)
+    bytes_data = blob.download_as_string()
+    return bytes_data
+
+def esUriGcs(string):
+    return string.startswith('gs://')
+
+def esBase64(string):
+    try:
+        base64.b64decode(string)
+        return True
+    except Exception:
+        return False
+
+def esUrl(string):
+    return string.startswith("http://") or string.startswith("https://")
+
 def prettyErrors(d:dict) -> str:
     s = "Errores detectados:"
     if all(valor == False for valor in d.values()):
@@ -58,9 +82,16 @@ def autoMLValidacion(
 ):
     clientOptions = {"api_endpoint": apiEndpoint}
     client = aiplatform.gapic.PredictionServiceClient(client_options=clientOptions)
-    fileContent = getImageBytesFromUrl(filename)
 
-    encodedContent = base64.b64encode(fileContent).decode("utf-8")
+    if esUrl(filename):
+        fileContent = getImageBytesFromUrl(filename)
+        encodedContent = base64.b64encode(fileContent).decode("utf-8")
+    elif esUriGcs(filename):
+        fileContent = obtenerBytesDesdeGcs(filename)
+        encodedContent = base64.b64encode(fileContent).decode("utf-8")
+    elif esBase64(filename):
+        encodedContent = filename
+
     instance = predict.instance.ImageClassificationPredictionInstance(
         content=encodedContent,
     ).to_value()
@@ -137,9 +168,16 @@ def autoMLEnriquecimiento(
 ):
     clientOptions = {"api_endpoint": apiEndpoint}
     client = aiplatform.gapic.PredictionServiceClient(client_options=clientOptions)
-    fileContent = getImageBytesFromUrl(filename)
 
-    encodedContent = base64.b64encode(fileContent).decode("utf-8")
+    if esUrl(filename):
+        fileContent = getImageBytesFromUrl(filename)
+        encodedContent = base64.b64encode(fileContent).decode("utf-8")
+    elif esUriGcs(filename):
+        fileContent = obtenerBytesDesdeGcs(filename)
+        encodedContent = base64.b64encode(fileContent).decode("utf-8")
+    elif esBase64(filename):
+        encodedContent = filename
+
     instance = predict.instance.ImageClassificationPredictionInstance(
         content=encodedContent,
     ).to_value()
@@ -209,7 +247,13 @@ def getTextFromImage(imageUrl):
     client = vision.ImageAnnotatorClient()
 
     image = vision.Image()
-    image.source.image_uri = imageUrl
+
+    if esUrl(imageUrl):
+        image.source.image_uri = imageUrl
+    elif esUriGcs(imageUrl):
+        image.source.gcs_image_uri = imageUrl
+    elif esBase64(imageUrl):
+        image.content = imageUrl
 
     response = client.text_detection(image=image)
     texts = response.text_annotations
@@ -281,47 +325,109 @@ def readTextFile(file_path):
         data = file.readlines()
     return [line.strip() for line in data]
 
-def detectLogosUri(uri, forbiddenPhrasesFile, monthsFile):
+def detectLogosUri(uri, forbiddenPhrasesFile):
     """Detects logos in the file located in Google Cloud Storage or on the Web."""
     client = vision.ImageAnnotatorClient()
-    
+
     forbiddenPhrases = readTextFile(forbiddenPhrasesFile)
-    allowedWebsites = "www.liverpool.com.mx"
-    months = readTextFile(monthsFile)
-
-    response = requests.get(uri)
-    imagePil = Image.open(BytesIO(response.content))
-    imageBytes = imagePil.convert("RGB").tobytes()
-    image = vision.Image(content=imageBytes)
-
-    response = client.text_detection(image=image)
-    texts = response.text_annotations[1:]
-
-    forbiddenPhraseDetected = False
-    websiteDetected = False
-    monthDetected = False
-
-    for text in texts:
-        detectedText = text.description
-
-        for phrase in forbiddenPhrases:
-            if phrase.lower() in detectedText.lower():
-                forbiddenPhraseDetected = True
-
-        if allowedWebsites not in detectedText.lower():
-            websiteDetected = True
-
-        datePattern = r"\d{1,2}\s*(?:[./-]\s*\d{1,2}){0,2}"
-        monthPattern = r"\b(?:%s)\b" % "|".join(months)
-        if re.search(datePattern, detectedText, re.IGNORECASE) or re.search(monthPattern, detectedText, re.IGNORECASE):
-            monthDetected = True
 
     image = vision.Image()
-    image.source.image_uri = uri
+
+    if esUrl(uri):
+        image.source.image_uri = uri
+    elif esUriGcs(uri):
+        image.source.gcs_image_uri = uri
+    elif esBase64(uri):
+        image.content = uri
 
     response = client.logo_detection(image=image)
     logos = response.logo_annotations
     
-    success = len(logos) > 1
+    success = False 
+    detected_logos = []
 
-    return (forbiddenPhraseDetected, websiteDetected, monthDetected, success)
+    for logo in logos:
+        logo_text = logo.description.lower()
+        if any(phrase.lower() in logo_text for phrase in forbiddenPhrases):
+            return False
+
+        success = True
+        detected_logos.append(logo_text)
+        
+    if len(detected_logos) != 1:
+        success = False
+        
+    return success
+
+def findUrls(s):
+    regex = r'('
+    regex += r'(?:(https?|s?ftp):\/\/)?'
+    regex += r'(?:www\.)?'
+    regex += r'('
+    regex += r'(?:(?:[A-Z0-9][A-Z0-9-]{0,61}[A-Z0-9]\.)+)'
+    regex += r'([A-Z]{2,6})'
+    regex += r'|(?:\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'
+    regex += r')'
+    regex += r'(?::(\d{1,5}))?'
+    regex += r'(?:(\/\S+)*)'
+    regex += r')'
+
+    find_urls_in_string = re.compile(regex, re.IGNORECASE)
+    url = find_urls_in_string.findall(s)
+    urls = []
+    for u in url:
+        urls.append(u[0])
+    return urls
+
+def analyzeImageText(imageUrl, forbiddenPhrasesFile, monthsFile):
+
+    forbiddenPhrases = readTextFile(forbiddenPhrasesFile)
+    months = readTextFile(monthsFile)
+
+    client = vision.ImageAnnotatorClient()
+
+    image = vision.Image()
+
+    if esUrl(imageUrl):
+        image.source.image_uri = imageUrl
+    elif esUriGcs(imageUrl):
+        image.source.gcs_image_uri = imageUrl
+    elif esBase64(imageUrl):
+        image.content = imageUrl
+        
+    response = client.text_detection(image=image)
+    texts = response.text_annotations
+
+    if texts:
+        detectedText = texts[0].description 
+
+    forbiddenPhrasesList = []
+    for phrase in forbiddenPhrases:
+        if phrase.lower() in detectedText.lower():
+            forbiddenPhrasesList.append(True)
+
+    # Verificamos si hay palabras probihibas
+    forbiddenPhrasesDetected = any(forbiddenPhrasesList)
+
+    # Verificamos si hay referencias a meses
+    # datePattern = r"\d{1,2}\s*(?:[./-]\s*\d{1,2}){0,2}" # detecta números solos
+    datePattern = r"\d{1,2}\s*[/-]\s*\d{1,2}" # número de uno o dos dígitos, seguido de un separador (barra o guion), y luego otro número de uno o dos dígitos
+    monthPattern = r"\b(?:%s)\b" % "|".join(months)
+    if re.search(datePattern, detectedText, re.IGNORECASE) or re.search(monthPattern, detectedText, re.IGNORECASE):
+        monthDetected = True
+    else:
+        monthDetected = False
+
+    # Verificamos si hay referencias a porcentajes
+    porcentagePattern = r"[0-9,]+[%]"
+    porcentageDetected = bool(re.search(porcentagePattern, detectedText))
+
+    # Verificamos si hay referencias a precios
+    pricePattern = r"[$]+[0-9,]"
+    priceDetected = bool(re.search(pricePattern, detectedText))
+
+    # Verificamos si hay sitios web distintos a liverpool
+    urls = findUrls(detectedText)
+    urlsDetected = any(url != 'www.liverpool.com.mx' for url in urls)
+
+    return forbiddenPhrasesDetected, monthDetected, porcentageDetected, priceDetected, urlsDetected

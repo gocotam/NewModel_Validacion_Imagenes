@@ -19,14 +19,18 @@ atributosJson = loadValidAttributes("atributosValidos.json")
 # Funciones auxiliares para aplicar la concurrencia
 def generateOneImage(img):
     project, endpointId, location = endpointValidacion()
-    predicciones = autoMLValidacion(project, endpointId, img.URL, location)
+    info = [k for k in [img.URL, img.URI,img.Base64] if k!=""][0]
+    predicciones = autoMLValidacion(project, endpointId, info, location)
     response = dict(predicciones[0])
-    forbiddenPhraseDetected, websiteDetected, monthDetected, logoDetected = detectLogosUri(img.URL, "forbiddenPhrases.txt", "months.txt")
+    logoDetected = detectLogosUri(info, "forbiddenPhrases.txt")
+    forbiddenPhraseDetected, monthDetected, porcentageDetected, priceDetected, urlsDetected = analyzeImageText(info, "forbiddenPhrases.txt", "months.txt")
 
     validacionesResponse = {"fraseProhibida": forbiddenPhraseDetected, 
-                            "paginaWeb": websiteDetected, 
+                            "paginaWeb": urlsDetected, 
                             "refAMeses": monthDetected, 
-                            "masDeUnLogo": logoDetected}
+                            "masDeUnLogo": logoDetected,
+                            "porcentajesDetectados": porcentageDetected,
+                            "preciosDetectados": priceDetected}
     
     labels = ["pixelado", "corte de extremidades", "mesa", "mal enfocado", "modelo", "producto roto", "aire", "ojos cerrados",
               "etiqueta visible", "reflejo", "mala iluminacion"]
@@ -40,17 +44,18 @@ def generateOneImage(img):
             
     d_aux = {
         "ID": img.ID,
-        "URL": img.URL,
+        "Info": info,
         "Tipo": stripAccents(img.Tipo),
         "validacionesResponse": validacionesResponse
     }
     return d_aux
 def enriquecimientoOneImage(img):
     project, endpointId, location = endpointEnriquecimiento()
+    info = [k for k in [img.URL, img.URI, img.Base64] if k!=""][0]
     prediccionesEnriq = autoMLEnriquecimiento(
             project=project,
             endpointId=endpointId,
-            filename=img.URL,
+            filename=info,
             location=location)
     response = dict(prediccionesEnriq[0])
     return response
@@ -70,10 +75,10 @@ def validacion(request:ImageRequestValid):
                 d_aux = img.result()
                 responseObject = {}
                 responseObjectStatus = {}
-                ID, URL, tipo, validacionesResponse = d_aux.get("ID"), d_aux.get("URL"), d_aux.get("Tipo"), d_aux.get("validacionesResponse")
+                ID, info, tipo, validacionesResponse = d_aux.get("ID"), d_aux.get("Info"), d_aux.get("Tipo"), d_aux.get("validacionesResponse")
                 logging.info(f"Generando imagen {ID}...")
                 if tipo in ["isometrico"]:
-                    validacionesResponse["medidas"] = compareImagesWithMeasurements({f"Producto{i}":medidasRequest[f"Producto{i}"]}, [URL])[0]
+                    validacionesResponse["medidas"] = compareImagesWithMeasurements({f"Producto{i}":medidasRequest[f"Producto{i}"]}, [info])[0]
                     i += 1
                     responseObject["ID"] = ID
                     if all(value == True for value in validacionesResponse.values()):
@@ -180,32 +185,60 @@ def generateImagesEnriq(request:ImageRequestEnriq):
 # Endpoint para la validación de imágenes
 @app.post("/imgs")
 async def validacionEndpoint(request: ImageRequestValid=Body(...)):
-    try:
-        results = generateImagesValid(request)
-        response = successfulResponseValidacion(results)
-        return response
-    except HTTPException as he:
-        return handleError(he)
+    if request.Prediccion == True:
+        try:
+            results = generateImagesValid(request)
+            response = successfulResponseValidacion(results)
+            return response
+        except HTTPException as he:
+            return handleError(he)
 
-    except Exception as e:
-        logging.error(f"Error: {e}")
-        traceback.print_exc()
-        return handleError(e)
+        except Exception as e:
+            logging.error(f"Error: {e}")
+            traceback.print_exc()
+            return handleError(e)
+    else:
+        return {
+            "Status": {
+                "General": "Success",
+                "Details": {
+                    "Images": {
+                        "Code": "00",
+                        "Message": "No se solicito predicción."
+                    }
+                }
+            },
+            "Imagenes": []
+        }
 
 # Endpoint para el enriquecimiento de imágenes
 @app.post("/enriq")
 async def enriquecimientoEndpoint(request: ImageRequestEnriq=Body(...)):
-    try:
-        results = generateImagesEnriq(request)
-        response = successfulResponseEnriquecimiento(results)
-        return response
-    except HTTPException as he:
-        return handleError(he)
+    if request.Prediccion == True:
+        try:
+            results = generateImagesEnriq(request)
+            response = successfulResponseEnriquecimiento(results)
+            return response
+        except HTTPException as he:
+            return handleError(he)
 
-    except Exception as e:
-        logging.error(f"Error: {e}")
-        traceback.print_exc()
-        return handleError(e)
+        except Exception as e:
+            logging.error(f"Error: {e}")
+            traceback.print_exc()
+            return handleError(e)
+    else:
+        return {
+            "Status": {
+                "General": "Success",
+                "Details": {
+                    "Atributos": {
+                        "Code": "00",
+                        "Message": "No se solicito predicción."
+                    }
+                }
+            },
+            "Atributos": []
+        }
 
 if __name__ == "__main__":
     import uvicorn
