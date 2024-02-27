@@ -187,9 +187,22 @@ def generateImagesEnriq(request:ImageRequestEnriq):
 async def validacionEndpoint(request: ImageRequestValid=Body(...)):
     if request.Prediccion == True:
         try:
-            results = generateImagesValid(request)
-            response = successfulResponseValidacion(results)
-            return response
+            if len(request.Imagenes) != 0:
+                results = generateImagesValid(request)
+                response = successfulResponseValidacion(results)
+                return response
+            else:
+                return {
+                    "Status": {
+                        "General": "Success",
+                        "Details": {
+                            "Images": {
+                                "Code": "00",
+                                "Message": "No se agregaron imágenes."
+                            }
+                        }
+                    }
+                }
         except HTTPException as he:
             return handleError(he)
 
@@ -216,9 +229,22 @@ async def validacionEndpoint(request: ImageRequestValid=Body(...)):
 async def enriquecimientoEndpoint(request: ImageRequestEnriq=Body(...)):
     if request.Prediccion == True:
         try:
-            results = generateImagesEnriq(request)
-            response = successfulResponseEnriquecimiento(results)
-            return response
+            if len(request.Imagenes) != 0:
+                results = generateImagesEnriq(request)
+                response = successfulResponseEnriquecimiento(results)
+                return response
+            else: 
+                return {
+                    "Status": {
+                        "General": "Success",
+                        "Details": {
+                            "Atributos": {
+                                "Code": "00",
+                                "Message": "No se agregaron imágenes."
+                            }
+                        }
+                    }
+                }
         except HTTPException as he:
             return handleError(he)
 
