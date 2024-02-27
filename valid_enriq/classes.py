@@ -8,9 +8,9 @@ class Medida(BaseModel):
 class Imagen(BaseModel):
     Tipo: str
     ID: str
-    URI: Optional[str] = ""
-    URL : Optional[str] = ""
-    Base64: Optional[str] = ""
+    URI: Optional[str] = None
+    URL : Optional[str] = None
+    Base64: Optional[str] = None
 
 class ImageRequestValid(BaseModel):
     Plantilla: str

@@ -19,18 +19,18 @@ atributosJson = loadValidAttributes("atributosValidos.json")
 # Funciones auxiliares para aplicar la concurrencia
 def generateOneImage(img):
     project, endpointId, location = endpointValidacion()
-    info = [k for k in [img.URL, img.URI,img.Base64] if k!=""][0]
+    info = [k for k in [img.URL, img.URI,img.Base64] if k!=None][0]
     predicciones = autoMLValidacion(project, endpointId, info, location)
     response = dict(predicciones[0])
     logoDetected = detectLogosUri(info, "forbiddenPhrases.txt")
-    forbiddenPhraseDetected, monthDetected, porcentageDetected, priceDetected, urlsDetected = analyzeImageText(info, "forbiddenPhrases.txt", "months.txt")
+    forbiddenPhraseDetected, monthDetected, porcentageDetected, symbolDetected, urlsDetected = analyzeImageText(info, "forbiddenPhrases.txt", "months.txt")
 
     validacionesResponse = {"fraseProhibida": forbiddenPhraseDetected, 
                             "paginaWeb": urlsDetected, 
                             "refAMeses": monthDetected, 
                             "masDeUnLogo": logoDetected,
                             "porcentajesDetectados": porcentageDetected,
-                            "preciosDetectados": priceDetected}
+                            "preciosDetectados": symbolDetected}
     
     labels = ["pixelado", "corte de extremidades", "mesa", "mal enfocado", "modelo", "producto roto", "aire", "ojos cerrados",
               "etiqueta visible", "reflejo", "mala iluminacion"]
@@ -77,7 +77,6 @@ def validacion(request:ImageRequestValid):
                 responseObjectStatus = {}
                 ID, info, tipo, validacionesResponse = d_aux.get("ID"), d_aux.get("Info"), d_aux.get("Tipo"), d_aux.get("validacionesResponse")
                 logging.info(f"Generando imagen {ID}...")
-                #####
                 if tipo in ["isometrico", "detalle", "principal"]:
                     responseObject["ID"] = ID
                     if all(value == True for value in validacionesResponse.values()):
@@ -93,8 +92,8 @@ def validacion(request:ImageRequestValid):
                     imagenes.append(responseObject)
                 else:
                     raise HTTPException(status_code=400, detail="Tipo de imagen no válido.")
-            except Exception as e:
-                logging.error(f"Error: {e}")
+            except HTTPException as e:
+                logging.error(f"Error {e.status_code}: {e.detail}") #logging.error(f"Error: {e}")
     return imagenes
 def generateImagesValid(request:ImageRequestValid):
     return {"Imagenes":validacion(request)}
@@ -177,33 +176,22 @@ def generateImagesEnriq(request:ImageRequestEnriq):
 # Endpoint para la validación de imágenes
 @app.post("/imgs")
 async def validacionEndpoint(request: ImageRequestValid=Body(...)):
-    if request.Prediccion == True:
-        try:
-            if len(request.Imagenes) != 0:
-                results = generateImagesValid(request)
-                response = successfulResponseValidacion(results)
-                return response
+    try:
+        validacion_request = validarRequestValid(request)
+        if validacion_request:
+            if request.Prediccion == True:
+                try: 
+                    results = generateImagesValid(request)
+                    response = successfulResponseValidacion(results)
+                    return response
+                except HTTPException as he:
+                    return handleError(he)
+                except Exception as e:
+                    logging.error(f"Error: {e}")
+                    traceback.print_exc()
+                    return handleError(e)
             else:
                 return {
-                    "Status": {
-                        "General": "Success",
-                        "Details": {
-                            "Images": {
-                                "Code": "00",
-                                "Message": "No se agregaron imágenes."
-                            }
-                        }
-                    }
-                }
-        except HTTPException as he:
-            return handleError(he)
-
-        except Exception as e:
-            logging.error(f"Error: {e}")
-            traceback.print_exc()
-            return handleError(e)
-    else:
-        return {
             "Status": {
                 "General": "Success",
                 "Details": {
@@ -215,37 +203,30 @@ async def validacionEndpoint(request: ImageRequestValid=Body(...)):
             },
             "Imagenes": []
         }
+        else:
+            raise HTTPException(status_code=400, detail="Error de formato.")
+    except HTTPException as he:
+        raise HTTPException(status_code=400, detail={"Code": he.status_code, "Message": he.detail})
 
 # Endpoint para el enriquecimiento de imágenes
 @app.post("/enriq")
 async def enriquecimientoEndpoint(request: ImageRequestEnriq=Body(...)):
-    if request.Prediccion == True:
-        try:
-            if len(request.Imagenes) != 0:
-                results = generateImagesEnriq(request)
-                response = successfulResponseEnriquecimiento(results)
-                return response
-            else: 
+     try:
+        validacion_request = validarRequestEnriq(request)
+        if validacion_request:
+            if request.Prediccion == True:
+                try: 
+                    results = generateImagesEnriq(request)
+                    response = successfulResponseEnriquecimiento(results)
+                    return response
+                except HTTPException as he:
+                    return handleError(he)
+                except Exception as e:
+                    logging.error(f"Error: {e}")
+                    traceback.print_exc()
+                    return handleError(e)
+            else:
                 return {
-                    "Status": {
-                        "General": "Success",
-                        "Details": {
-                            "Atributos": {
-                                "Code": "00",
-                                "Message": "No se agregaron imágenes."
-                            }
-                        }
-                    }
-                }
-        except HTTPException as he:
-            return handleError(he)
-
-        except Exception as e:
-            logging.error(f"Error: {e}")
-            traceback.print_exc()
-            return handleError(e)
-    else:
-        return {
             "Status": {
                 "General": "Success",
                 "Details": {
@@ -257,6 +238,10 @@ async def enriquecimientoEndpoint(request: ImageRequestEnriq=Body(...)):
             },
             "Atributos": []
         }
+        else:
+            raise HTTPException(status_code=400, detail="Error de formato.")
+     except HTTPException as he:
+        raise HTTPException(status_code=400, detail={"Code": he.status_code, "Message": he.detail})
 
 if __name__ == "__main__":
     import uvicorn

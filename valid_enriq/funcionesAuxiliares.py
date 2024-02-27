@@ -14,8 +14,39 @@ import re
 from google.cloud import vision, storage
 import functools
 import unicodedata
+from classes import ImageRequestValid, ImageRequestEnriq
+
 
 # Funciones
+def validarRequestEnriq(request: ImageRequestEnriq):
+    aux = True
+    if request.Plantilla.strip() == "" or str(request.Prediccion).strip() == "":
+        aux = False
+        return aux
+    elif len(request.Atributos) == 0:
+        aux = False
+    else:
+        for img in request.Imagenes:
+            if any(field.strip() == "" for field in [img.Tipo, img.ID, img.URL, img.URI, img.Base64] if field!=None):
+                aux = False
+                return aux
+    return aux
+
+def validarRequestValid(request:ImageRequestValid):
+    aux = True
+    if request.Plantilla.strip() == "" or str(request.Prediccion).strip() == "":
+        aux = False
+        return aux
+    elif len(request.Medidas) == 0:
+        aux = False 
+        return False
+    else:
+        for img in request.Imagenes:
+            if any(field.strip() == "" for field in [img.Tipo, img.ID, img.URL, img.URI, img.Base64] if field!=None):
+                aux = False
+                return aux
+    return aux
+
 def base64ToBytes(base64_str):
     # Decodificar la representación base64 a una cadena de bytes
     imagen_bytes = base64.b64decode(base64_str)
@@ -422,12 +453,12 @@ def analyzeImageText(imageUrl, forbiddenPhrasesFile, monthsFile):
     porcentagePattern = r"[0-9,]+[%]"
     porcentageDetected = bool(re.search(porcentagePattern, detectedText))
 
-    # Verificamos si hay referencias a precios
-    pricePattern = r"[$]+[0-9,]"
-    priceDetected = bool(re.search(pricePattern, detectedText))
+    # Verificamos si hay referencias a símbolos de monedas
+    symbolPattern = r'(US\$|€|¥|£|A\$|C\$|Fr|元|HK\$|NZ\$|\$|₩)'
+    symbolDetected = bool(re.search(symbolPattern, detectedText))
 
     # Verificamos si hay sitios web distintos a liverpool
     urls = findUrls(detectedText)
     urlsDetected = any(url != 'www.liverpool.com.mx' for url in urls)
 
-    return forbiddenPhrasesDetected, monthDetected, porcentageDetected, priceDetected, urlsDetected
+    return forbiddenPhrasesDetected, monthDetected, porcentageDetected, symbolDetected, urlsDetected
