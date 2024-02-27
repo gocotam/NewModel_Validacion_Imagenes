@@ -217,7 +217,7 @@ async def validacionEndpoint(request: ImageRequestValid=Body(...)):
                 "Details": {
                     "Images": {
                         "Code": "00",
-                        "Message": "No se solicito predicción."
+                        "Message": "No se solicitó predicción."
                     }
                 }
             },
@@ -259,7 +259,7 @@ async def enriquecimientoEndpoint(request: ImageRequestEnriq=Body(...)):
                 "Details": {
                     "Atributos": {
                         "Code": "00",
-                        "Message": "No se solicito predicción."
+                        "Message": "No se solicitó predicción."
                     }
                 }
             },
