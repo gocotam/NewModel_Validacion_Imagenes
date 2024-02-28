@@ -17,6 +17,7 @@ from PIL import Image
 from io import BytesIO
 import functools
 import unicodedata
+import time
 
 # Funciones
 def stripAccents(s):
@@ -48,7 +49,7 @@ def autoMLValidacion(
     instances = [instance]
     parameters = predict.params.ImageClassificationPredictionParams(
         confidence_threshold=0.3,
-        max_predictions=5,
+        max_predictions=10,
     ).to_value()
     endpoint = client.endpoint_path(
         project=project, location=location, endpoint=endpointId
@@ -126,8 +127,8 @@ def autoMLEnriquecimiento(
     ).to_value()
     instances = [instance]
     parameters = predict.params.ImageClassificationPredictionParams(
-        confidence_threshold=0.1,
-        max_predictions=5,
+        confidence_threshold=0.8,
+        max_predictions=10,
     ).to_value()
     endpoint = client.endpoint_path(
         project=project, location=location, endpoint=endpointId
@@ -161,7 +162,7 @@ def normalizeDict(dCombined):
                 normalizedDict[num][key] = normalizedValues
     return normalizedDict
 
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=3)
 def loadValidAttributes(filename: str) -> dict:
     with open(filename, 'r') as file:
         data = json.load(file)
@@ -256,17 +257,18 @@ def compareImagesWithMeasurements(measurementsList, imageUrls):
             successList.append(f"Error: {str(e)}") 
     return successList
 
-@functools.lru_cache(maxsize=1)
+@functools.lru_cache(maxsize=3)
 def readTextFile(file_path):
     with open(file_path, 'r') as file:
         data = file.readlines()
     return [line.strip() for line in data]
 
+client = vision.ImageAnnotatorClient()
+
 
 def detectLogosUri(uri, forbiddenPhrasesFile, monthsFile):
     """Detects logos in the file located in Google Cloud Storage or on the Web."""
-    client = vision.ImageAnnotatorClient()
-    
+    start = time.time()
     forbiddenPhrases = readTextFile(forbiddenPhrasesFile)
     allowedWebsites = "www.liverpool.com.mx"
     months = readTextFile(monthsFile)
@@ -274,7 +276,8 @@ def detectLogosUri(uri, forbiddenPhrasesFile, monthsFile):
     response = requests.get(uri)
     imagePil = Image.open(BytesIO(response.content))
     imageBytes = imagePil.convert("RGB").tobytes()
-    image = vision.Image(content=imageBytes)
+    image = vision.Image()#(content=imageBytes)
+    image.source.image_uri = uri
 
     response = client.text_detection(image=image)
     texts = response.text_annotations[1:]
@@ -297,11 +300,14 @@ def detectLogosUri(uri, forbiddenPhrasesFile, monthsFile):
         monthPattern = r"\b(?:%s)\b" % "|".join(months)
         if re.search(datePattern, detectedText, re.IGNORECASE) or re.search(monthPattern, detectedText, re.IGNORECASE):
             monthDetected = True
-
+        
+    print(f"Tiempo de procesamiento de texto: {time.time() - start}")
     image = vision.Image()
+    print(f"Tiempo de creación de imagen: {time.time() - start}")
     image.source.image_uri = uri
 
     response = client.logo_detection(image=image)
+    print(f"Tiempo de detección de logos: {time.time() - start}")
     logos = response.logo_annotations
     
     success = len(logos) > 1

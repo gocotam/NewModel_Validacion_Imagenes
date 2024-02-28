@@ -10,6 +10,7 @@ class Imagen(BaseModel):
     ID: str
     URI: Optional[str] = ""
     URL : Optional[str] = ""
+    base64_: Optional[str] = ""
 
 #BYTES: Optional[bytes] = b""
 class ImageRequestValid(BaseModel):

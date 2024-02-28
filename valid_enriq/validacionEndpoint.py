@@ -21,25 +21,46 @@ app = FastAPI()
 # Leemos el json de atributos
 atributosJson = loadValidAttributes("atributosValidos.json")
 
+def string_to_camel_case(string):
+    string = ''.join(x for x in string.title() if x.isalnum())
+    return string[0].lower() + string[1:]
+
 # Funciones auxiliares para aplicar la concurrencia
 def generateOneImage(img):
     project, endpointId, location = endpointValidacion()
+    data = img.bytes if img.bytes else img.URI if img.URI.startswith("gs://") else img.URL
     predicciones = autoMLValidacion(project, endpointId, img.URL, location)
     response = dict(predicciones[0])
-    forbiddenPhraseDetected, websiteDetected, monthDetected, logoDetected = detectLogosUri(img.URL, "forbiddenPhrases.txt", "months.txt")
+    # forbiddenPhraseDetected, websiteDetected, monthDetected, logoDetected = detectLogosUri(img.URL, "forbiddenPhrases.txt", "months.txt")
 
-    validacionesResponse = {"Frase prohibida": forbiddenPhraseDetected, 
-                            "Página web": websiteDetected, 
-                            "Ref a meses": monthDetected, 
-                            "Más de un logo": logoDetected}
+    validacionesResponse = {"fraseProhibida":False, 
+                            "paginaWeb":False, 
+                            "refAMeses":False, 
+                            "masDeUnLogo":False}
 
+    #validacionesResponse = {}
+    labels = ["pixelado","corte de extremidades","mesa","mal enfocado","modelo",
+              "producto roto","aire","ojos cerrados","etiqueta visible","reflejo","mala iluminacion"]
+    
+    pretty_errors = "Errores detectados:"
     for name in response["displayNames"]:
-        validacionesResponse[name] = True
+        if  name in ["modelo","mesa"]:
+            continue
+        validacionesResponse[string_to_camel_case(name)] = True
+        pretty_errors += f"\n{name}"
+    
+    if "\n" not in pretty_errors:
+        pretty_errors += " Ningún error detectado."
+    for label in labels:
+        if string_to_camel_case(label) not in validacionesResponse.keys():
+            validacionesResponse[string_to_camel_case(label)] = False        
+    
     d_aux = {
         "ID": img.ID,
         "URL": img.URL,
         "Tipo": stripAccents(img.Tipo),
-        "validacionesResponse": validacionesResponse
+        "validacionesResponse": validacionesResponse,
+        "DescripcionErrores": pretty_errors,
     }
     return d_aux
 
@@ -59,26 +80,29 @@ def validacion(request:ImageRequestValid):
                 responseObject = {}
                 responseObjectStatus = {}
                 ID, URL, tipo, validacionesResponse = d_aux.get("ID"), d_aux.get("URL"), d_aux.get("Tipo"), d_aux.get("validacionesResponse")
+                errorDescription = d_aux.get("DescripcionErrores")
                 logging.info(f"Generando imagen {ID}...")
                 if tipo in ["isometrico"]:
                     validacionesResponse["medidas"] = compareImagesWithMeasurements({f"Producto{i}":medidasRequest[f"Producto{i}"]}, [URL])[0]
                     i += 1
                     responseObject["ID"] = ID
-                    if all(value == True for value in validacionesResponse.values()):
-                        responseObjectStatus["Codigo"] = "Exito"
-                    else:
+                    if any(value == True for value in [elem for elem in validacionesResponse.values() if elem not in ["modelo","mesa"]]):
                         responseObjectStatus["Codigo"] = "Error"
+                    else:
+                        responseObjectStatus["Codigo"] = "Exito"
                     responseObject["Status"] = responseObjectStatus
                     responseObjectStatus["Validaciones"] = validacionesResponse
+                    responseObjectStatus["DescripcionErrores"] = errorDescription
                     imagenes.append(responseObject)
                 elif tipo in ["detalle", "principal"]:
                     responseObject["ID"] = ID
-                    if all(value == True for value in validacionesResponse.values()):
-                        responseObjectStatus["Codigo"] = "Exito"
-                    else:
+                    if any(value == True for value in [elem for elem in validacionesResponse.values() if elem not in ["modelo","mesa"]]):
                         responseObjectStatus["Codigo"] = "Error"
+                    else:
+                        responseObjectStatus["Codigo"] = "Exito"
                     responseObject["Status"] = responseObjectStatus
                     responseObjectStatus["Validaciones"] = validacionesResponse
+                    responseObjectStatus["DescripcionErrores"] = errorDescription
                     imagenes.append(responseObject)
                 else:
                     raise HTTPException(status_code=400, detail="Tipo de imagen no válido")
